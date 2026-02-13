@@ -1,14 +1,9 @@
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const https = require('https');
 
-// ============================================================
-// CONFIG - FILL THESE IN
-// ============================================================
 const DISCORD_TOKEN  = process.env.DISCORD_TOKEN;
 const CLIENT_ID      = process.env.CLIENT_ID;
 const WORKER_URL     = process.env.WORKER_URL;
-
-// ============================================================
 
 function fetchJSON(url) {
   return new Promise((resolve, reject) => {
@@ -28,7 +23,6 @@ function formatScore(score) {
   return String(score);
 }
 
-// Register slash commands
 async function registerCommands() {
   const commands = [
     new SlashCommandBuilder()
@@ -44,16 +38,16 @@ async function registerCommands() {
   const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
   try {
     await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-    console.log('✅ Slash commands registered');
+    console.log('Slash commands registered');
   } catch (e) {
-    console.error('❌ Failed to register commands:', e);
+    console.error('Failed to register commands:', e);
   }
 }
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 client.once('ready', async () => {
-  console.log(`✅ Bot online as ${client.user.tag}`);
+  console.log(`Bot online as ${client.user.tag}`);
   await registerCommands();
 });
 
@@ -69,14 +63,13 @@ client.on('interactionCreate', async interaction => {
     const data = await fetchJSON(`${WORKER_URL}/?action=list`);
 
     if (!data.success) {
-      return interaction.editReply('❌ Could not reach the player tracker.');
+      return interaction.editReply('Could not reach the player tracker.');
     }
 
     if (!data.players || data.players.length === 0) {
-      return interaction.editReply('❌ No players online right now.');
+      return interaction.editReply('No players online right now.');
     }
 
-    // Find player by realName or inGameName (case insensitive)
     const player = data.players.find(p =>
       p.realName?.toLowerCase() === query ||
       p.inGameName?.toLowerCase() === query ||
@@ -85,14 +78,14 @@ client.on('interactionCreate', async interaction => {
     );
 
     if (!player) {
-      return interaction.editReply(`❌ No player found matching **${query}**. They may be offline.`);
+      return interaction.editReply(`No player found matching ${query}. They may be offline.`);
     }
 
     const isOnline = player.status === 'online';
     const dot = isOnline ? '🟢' : '🔴';
     const status = isOnline ? 'Online' : 'Offline';
 
-    const line = `${dot} **Player:** ${player.realName} | **Server:** ${player.serverName} | **Username:** ${player.inGameName} | **Team:** ${player.teamName} | **Score:** ${formatScore(player.score)}`;
+    const line = `${dot} Player: ${player.realName} | Server: ${player.serverName} | Username: ${player.inGameName} | Team: ${player.teamName} | Score: ${formatScore(player.score)}`;
 
     const embed = new EmbedBuilder()
       .setColor(isOnline ? 0x00c853 : 0xff1744)
@@ -104,7 +97,7 @@ client.on('interactionCreate', async interaction => {
 
   } catch (err) {
     console.error(err);
-    await interaction.editReply('❌ Error fetching player data: ' + err.message);
+    await interaction.editReply('Error fetching player data: ' + err.message);
   }
 });
 
