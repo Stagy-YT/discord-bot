@@ -7,6 +7,7 @@ const https = require('https');
 const DISCORD_TOKEN  = process.env.DISCORD_TOKEN;
 const CLIENT_ID      = process.env.CLIENT_ID;
 const WORKER_URL     = process.env.WORKER_URL;
+
 // ============================================================
 
 function fetchJSON(url) {
