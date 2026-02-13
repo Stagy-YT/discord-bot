@@ -27,12 +27,15 @@ async function registerCommands() {
   const commands = [
     new SlashCommandBuilder()
       .setName('info')
-      .setDescription('Look up a player')
+      .setDescription('Look up a specific player')
       .addStringOption(o =>
         o.setName('name')
          .setDescription('Real name or in-game name')
          .setRequired(true)
-      )
+      ),
+    new SlashCommandBuilder()
+      .setName('list')
+      .setDescription('Show all online players')
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
@@ -53,11 +56,8 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName !== 'info') return;
 
   await interaction.deferReply();
-
-  const query = interaction.options.getString('name').toLowerCase();
 
   try {
     const data = await fetchJSON(`${WORKER_URL}/?action=list`);
@@ -70,30 +70,51 @@ client.on('interactionCreate', async interaction => {
       return interaction.editReply('No players online right now.');
     }
 
-    const player = data.players.find(p =>
-      p.realName?.toLowerCase() === query ||
-      p.inGameName?.toLowerCase() === query ||
-      p.realName?.toLowerCase().includes(query) ||
-      p.inGameName?.toLowerCase().includes(query)
-    );
+    // COMMAND: /list - Show all online players
+    if (interaction.commandName === 'list') {
+      const playerLines = data.players.map(p => {
+        const dot = p.status === 'online' ? '🟢' : '🔴';
+        return `${dot} **${p.realName}** (${p.inGameName}) | Server: ${p.serverName} | Team: ${p.teamName} | Score: ${formatScore(p.score)}`;
+      });
 
-    if (!player) {
-      return interaction.editReply(`No player found matching ${query}. They may be offline.`);
+      const embed = new EmbedBuilder()
+        .setColor(0x00c853)
+        .setTitle(`Online Players (${data.players.length})`)
+        .setDescription(playerLines.join('\n\n'))
+        .setTimestamp();
+
+      return interaction.editReply({ embeds: [embed] });
     }
 
-    const isOnline = player.status === 'online';
-    const dot = isOnline ? '🟢' : '🔴';
-    const status = isOnline ? 'Online' : 'Offline';
+    // COMMAND: /info - Search for specific player
+    if (interaction.commandName === 'info') {
+      const query = interaction.options.getString('name').toLowerCase();
 
-    const line = `${dot} Player: ${player.realName} | Server: ${player.serverName} | Username: ${player.inGameName} | Team: ${player.teamName} | Score: ${formatScore(player.score)}`;
+      const player = data.players.find(p =>
+        p.realName?.toLowerCase() === query ||
+        p.inGameName?.toLowerCase() === query ||
+        p.realName?.toLowerCase().includes(query) ||
+        p.inGameName?.toLowerCase().includes(query)
+      );
 
-    const embed = new EmbedBuilder()
-      .setColor(isOnline ? 0x00c853 : 0xff1744)
-      .setDescription(line)
-      .setFooter({ text: `Status: ${status}` })
-      .setTimestamp();
+      if (!player) {
+        return interaction.editReply(`No player found matching ${query}. They may be offline.`);
+      }
 
-    await interaction.editReply({ embeds: [embed] });
+      const isOnline = player.status === 'online';
+      const dot = isOnline ? '🟢' : '🔴';
+      const status = isOnline ? 'Online' : 'Offline';
+
+      const line = `${dot} Player: ${player.realName} | Server: ${player.serverName} | Username: ${player.inGameName} | Team: ${player.teamName} | Score: ${formatScore(player.score)}`;
+
+      const embed = new EmbedBuilder()
+        .setColor(isOnline ? 0x00c853 : 0xff1744)
+        .setDescription(line)
+        .setFooter({ text: `Status: ${status}` })
+        .setTimestamp();
+
+      return interaction.editReply({ embeds: [embed] });
+    }
 
   } catch (err) {
     console.error(err);
