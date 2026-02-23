@@ -1,9 +1,11 @@
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const https = require('https');
 
-const DISCORD_TOKEN  = process.env.DISCORD_TOKEN;
-const CLIENT_ID      = process.env.CLIENT_ID;
-const WORKER_URL     = process.env.WORKER_URL;
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const CLIENT_ID     = process.env.CLIENT_ID;
+const WORKER_URL    = process.env.WORKER_URL; // e.g. https://playerdata.ratdynast.workers.dev
+
+// ── Fetch helpers ─────────────────────────────────────────────────────────────
 
 function fetchJSON(url) {
   return new Promise((resolve, reject) => {
@@ -18,39 +20,38 @@ function fetchJSON(url) {
   });
 }
 
-function formatScore(score) {
-  if (score >= 1000) return (score / 1000).toFixed(1) + 'K';
-  return String(score);
-}
+// ── Command registration ──────────────────────────────────────────────────────
 
 async function registerCommands() {
   const commands = [
     new SlashCommandBuilder()
+      .setName('list')
+      .setDescription('Show all online players'),
+    new SlashCommandBuilder()
       .setName('info')
-      .setDescription('Look up a specific player')
+      .setDescription('Look up a specific player by real name or in-game name')
       .addStringOption(o =>
         o.setName('name')
          .setDescription('Real name or in-game name')
          .setRequired(true)
       ),
-    new SlashCommandBuilder()
-      .setName('list')
-      .setDescription('Show all online players')
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
   try {
     await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-    console.log('Slash commands registered');
+    console.log('[Bot] Slash commands registered');
   } catch (e) {
-    console.error('Failed to register commands:', e);
+    console.error('[Bot] Failed to register commands:', e);
   }
 }
+
+// ── Bot setup ─────────────────────────────────────────────────────────────────
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 client.once('ready', async () => {
-  console.log(`Bot online as ${client.user.tag}`);
+  console.log(`[Bot] Online as ${client.user.tag}`);
   await registerCommands();
 });
 
@@ -60,65 +61,72 @@ client.on('interactionCreate', async interaction => {
   await interaction.deferReply();
 
   try {
+    // GET request only — no POST
     const data = await fetchJSON(`${WORKER_URL}/?action=list`);
 
     if (!data.success) {
-      return interaction.editReply('Could not reach the player tracker.');
+      return interaction.editReply('❌ Could not reach the player tracker worker.');
     }
 
-    if (!data.players || data.players.length === 0) {
-      return interaction.editReply('No players online right now.');
-    }
+    // data.players is an object keyed by sessionId — convert to array
+    const playersObj = data.players || {};
+    const players    = Object.values(playersObj);
 
-    // COMMAND: /list - Show all online players
+    // ── /list ──────────────────────────────────────────────────────────────────
     if (interaction.commandName === 'list') {
-      const playerLines = data.players.map(p => {
-        const dot = p.status === 'online' ? '🟢' : '🔴';
-        return `${dot} **${p.realName}** (${p.inGameName}) | Server: ${p.serverName} | Team: ${p.teamName} | Score: ${formatScore(p.score)}`;
-      });
+      if (players.length === 0) {
+        return interaction.editReply('No players online right now.');
+      }
+
+      // Sort alphabetically by real name
+      players.sort((a, b) => (a.realName || '').localeCompare(b.realName || ''));
+
+      const lines = players.map(p =>
+        `🟢 **${p.realName || 'Unknown'}** — \`${p.inGameName || '?'}\` | Server: ${p.serverName || '?'}`
+      );
 
       const embed = new EmbedBuilder()
         .setColor(0x00c853)
-        .setTitle(`Online Players (${data.players.length})`)
-        .setDescription(playerLines.join('\n\n'))
-        .setTimestamp();
+        .setTitle(`🎮 Online Players (${players.length})`)
+        .setDescription(lines.join('\n'))
+        .setTimestamp()
+        .setFooter({ text: 'Live data from player tracker' });
 
       return interaction.editReply({ embeds: [embed] });
     }
 
-    // COMMAND: /info - Search for specific player
+    // ── /info ──────────────────────────────────────────────────────────────────
     if (interaction.commandName === 'info') {
-      const query = interaction.options.getString('name').toLowerCase();
+      const query = interaction.options.getString('name').toLowerCase().trim();
 
-      const player = data.players.find(p =>
-        p.realName?.toLowerCase() === query ||
+      const player = players.find(p =>
+        p.realName?.toLowerCase()   === query ||
         p.inGameName?.toLowerCase() === query ||
         p.realName?.toLowerCase().includes(query) ||
         p.inGameName?.toLowerCase().includes(query)
       );
 
       if (!player) {
-        return interaction.editReply(`No player found matching ${query}. They may be offline.`);
+        return interaction.editReply(`❌ No online player found matching **${query}**. They may be offline or haven't connected yet.`);
       }
 
-      const isOnline = player.status === 'online';
-      const dot = isOnline ? '🟢' : '🔴';
-      const status = isOnline ? 'Online' : 'Offline';
-
-      const line = `${dot} Player: ${player.realName} | Server: ${player.serverName} | Username: ${player.inGameName} | Team: ${player.teamName} | Score: ${formatScore(player.score)}`;
-
       const embed = new EmbedBuilder()
-        .setColor(isOnline ? 0x00c853 : 0xff1744)
-        .setDescription(line)
-        .setFooter({ text: `Status: ${status}` })
-        .setTimestamp();
+        .setColor(0x00c853)
+        .setTitle(`🟢 ${player.realName || 'Unknown'}`)
+        .addFields(
+          { name: 'In-Game Name', value: `\`${player.inGameName || '?'}\``,    inline: true },
+          { name: 'Server',       value: player.serverName || 'Unknown',        inline: true },
+          { name: 'Session ID',   value: `\`${player.sessionId || '?'}\``,     inline: true },
+        )
+        .setTimestamp()
+        .setFooter({ text: `Last seen: ${player.lastSeen ? new Date(player.lastSeen * 1000).toUTCString() : 'Unknown'}` });
 
       return interaction.editReply({ embeds: [embed] });
     }
 
   } catch (err) {
-    console.error(err);
-    await interaction.editReply('Error fetching player data: ' + err.message);
+    console.error('[Bot] Error:', err);
+    await interaction.editReply('❌ Error fetching player data: ' + err.message);
   }
 });
 
