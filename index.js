@@ -5,6 +5,14 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID     = process.env.CLIENT_ID;
 const WORKER_URL    = process.env.WORKER_URL; // e.g. https://playerdata.ratdynast.workers.dev
 
+// ── Helpers ──────────────────────────────────────────────────────────────────────
+
+function formatScore(score) {
+  if (score >= 1000000) return (score / 1000000).toFixed(1) + 'M';
+  if (score >= 1000)    return (score / 1000).toFixed(1) + 'K';
+  return String(score);
+}
+
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
 
 function fetchJSON(url) {
@@ -81,9 +89,11 @@ client.on('interactionCreate', async interaction => {
       // Sort alphabetically by real name
       players.sort((a, b) => (a.realName || '').localeCompare(b.realName || ''));
 
-      const lines = players.map(p =>
-        `🟢 **${p.realName || 'Unknown'}** — \`${p.inGameName || '?'}\` | Server: ${p.serverName || '?'}`
-      );
+      const lines = players.map(p => {
+        const score = p.score ? formatScore(p.score) : '0';
+        const team  = p.teamName || 'Solo';
+        return `🟢 **${p.realName || 'Unknown'}** — \`${p.inGameName || '?'}\` | Server: ${p.serverName || '?'} | Team: ${team} | Score: ${score}`;
+      });
 
       const embed = new EmbedBuilder()
         .setColor(0x00c853)
@@ -114,9 +124,11 @@ client.on('interactionCreate', async interaction => {
         .setColor(0x00c853)
         .setTitle(`🟢 ${player.realName || 'Unknown'}`)
         .addFields(
-          { name: 'In-Game Name', value: `\`${player.inGameName || '?'}\``,    inline: true },
-          { name: 'Server',       value: player.serverName || 'Unknown',        inline: true },
-          { name: 'Session ID',   value: `\`${player.sessionId || '?'}\``,     inline: true },
+          { name: 'In-Game Name', value: `\`${player.inGameName || '?'}\``,          inline: true },
+          { name: 'Server',       value: player.serverName || 'Unknown',               inline: true },
+          { name: 'Team',         value: player.teamName   || 'Solo',                  inline: true },
+          { name: 'Score',        value: formatScore(player.score || 0),               inline: true },
+          { name: 'Session ID',   value: `\`${player.sessionId || '?'}\``,           inline: true },
         )
         .setTimestamp()
         .setFooter({ text: `Last seen: ${player.lastSeen ? new Date(player.lastSeen * 1000).toUTCString() : 'Unknown'}` });
