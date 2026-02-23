@@ -97,7 +97,7 @@ client.on('interactionCreate', async interaction => {
 
       const embed = new EmbedBuilder()
         .setColor(0x00c853)
-        .setTitle(`🟢 Online Players (${players.length})`)
+        .setTitle(` Online Players (${players.length})`)
         .setDescription(lines.join('\n'))
         .setTimestamp()
         .setFooter({ text: 'Live data from player tracker' });
